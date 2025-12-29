@@ -8,6 +8,8 @@ import android.hardware.SensorManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -17,10 +19,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,31 +44,23 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             var gameState by remember { mutableStateOf("SPLASH") }
             var level by remember { mutableStateOf(1) }
 
-            MaterialTheme {
-                when (gameState) {
-                    "SPLASH" -> {
-                        LaunchedEffect(Unit) { delay(2000); gameState = "PLAYING" }
-                        FullScreenMessage("LABYRINTH", "PRO EDITION", Color(0xFF3E2723))
-                    }
-                    "NEXT_LEVEL" -> {
-                        LaunchedEffect(Unit) { delay(1500); gameState = "PLAYING" }
-                        FullScreenMessage("NEXT LEVEL", "Level $level is starting...", Color(0xFF1B5E20))
-                    }
-                    "PLAYING" -> {
-                        LabyrinthGame(
-                            ax = accelX,
-                            ay = accelY,
-                            currentLevel = level,
-                            onWin = {
-                                level++
-                                gameState = "NEXT_LEVEL"
-                            },
-                            onLose = {
-                                // اگر باخت، لول تغییر نمی‌کند و فقط بازی ریست می‌شود
-                                gameState = "PLAYING" 
-                            }
-                        )
-                    }
+            when (gameState) {
+                "SPLASH" -> {
+                    LaunchedEffect(Unit) { delay(2000); gameState = "PLAYING" }
+                    FullScreenMessage("LABYRINTH", "Get Ready...", Color(0xFF3E2723))
+                }
+                "NEXT_LEVEL" -> {
+                    LaunchedEffect(Unit) { delay(1500); gameState = "PLAYING" }
+                    FullScreenMessage("WELL DONE!", "Level $level is starting", Color(0xFF1B5E20))
+                }
+                "PLAYING" -> {
+                    LabyrinthGame(
+                        ax = accelX,
+                        ay = accelY,
+                        currentLevel = level,
+                        onWin = { level++; gameState = "NEXT_LEVEL" },
+                        onLose = { gameState = "PLAYING" }
+                    )
                 }
             }
         }
@@ -76,7 +70,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     fun FullScreenMessage(title: String, sub: String, bgColor: Color) {
         Box(modifier = Modifier.fillMaxSize().background(bgColor), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(title, color = Color.White, fontSize = 45.sp, fontWeight = FontWeight.Black)
+                Text(title, color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Black)
                 Text(sub, color = Color.White.copy(0.7f), fontSize = 18.sp)
             }
         }
@@ -103,104 +97,119 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     @Composable
     fun LabyrinthGame(ax: Float, ay: Float, currentLevel: Int, onWin: () -> Unit, onLose: () -> Unit) {
-        val ballRadius = 28f
-        var ballPos by remember { mutableStateOf(Offset(100f, 100f)) }
+        var ballPos by remember { mutableStateOf(Offset(150f, 150f)) }
+        var isFalling by remember { mutableStateOf(false) }
+        var timeLeft by remember { mutableStateOf(60) }
         var isGameOver by remember { mutableStateOf(false) }
-        var isWin by remember { mutableStateOf(false) }
 
-        // تولید محتوای تصادفی برای هر مرحله
+        val ballRadius = 30f
+        val goalPos = Offset(900f, 1700f)
+        val holeRadius = 50f
+        
+        // تولید تصادفی چاله‌ها (بیشتر شدن با لول)
         val holes = remember(currentLevel) {
-            List(6 + currentLevel) { 
-                Offset(Random.nextFloat() * 800f + 100f, Random.nextFloat() * 1400f + 200f)
+            List(5 + (currentLevel * 2)) {
+                Offset(Random.nextFloat() * 800f + 100f, Random.nextFloat() * 1400f + 300f)
             }
         }
-        val walls = remember(currentLevel) {
-            val list = mutableListOf(
-                RectData(Offset(0f, 0f), Size(25f, 2000f)),
-                RectData(Offset(1055f, 0f), Size(25f, 2000f)),
-                RectData(Offset(0f, 1875f), Size(1080f, 25f))
-            )
-            repeat(4) {
-                list.add(RectData(
-                    Offset(Random.nextFloat() * 700f, Random.nextFloat() * 1400f + 200f),
-                    Size(if(Random.nextBoolean()) 300f else 35f, if(Random.nextBoolean()) 35f else 300f)
-                ))
+
+        // انیمیشن کوچک شدن توپ موقع افتادن
+        val ballScale by animateFloatAsState(
+            targetValue = if (isFalling) 0f else 1f,
+            animationSpec = tween(durationMillis = 500),
+            finishedListener = { if (isFalling) onWin() }
+        )
+
+        // تایمر
+        LaunchedEffect(currentLevel) {
+            timeLeft = 60
+            while (timeLeft > 0 && !isFalling && !isGameOver) {
+                delay(1000)
+                timeLeft--
             }
-            list
+            if (timeLeft == 0) isGameOver = true
         }
 
-        val goalPos = Offset(900f, 1750f)
-
+        // منطق حرکت و برخورد
         LaunchedEffect(ax, ay) {
-            if (!isGameOver && !isWin) {
-                val speed = 8f
-                val nextPos = Offset(ballPos.x + (ax * speed), ballPos.y + (ay * speed))
+            if (!isFalling && !isGameOver) {
+                val speed = 9f
+                var newX = ballPos.x + (ax * speed)
+                var newY = ballPos.y + (ay * speed)
 
-                var collision = false
-                for (wall in walls) {
-                    if (nextPos.x + ballRadius > wall.pos.x && nextPos.x - ballRadius < wall.pos.x + wall.size.width &&
-                        nextPos.y + ballRadius > wall.pos.y && nextPos.y - ballRadius < wall.pos.y + wall.size.height) {
-                        collision = true
-                    }
+                // برخورد با دیواره‌های کناری (قاب صفحه)
+                // اینجا منطق را طوری اصلاح کردم که توپ به دیوار نچسبد
+                if (newX < ballRadius + 25f) newX = ballRadius + 25f
+                if (newX > 1080f - ballRadius - 25f) newX = 1080f - ballRadius - 25f
+                if (newY < ballRadius + 25f) newY = ballRadius + 25f
+                if (newY > 1920f - ballRadius - 150f) newY = 1920f - ballRadius - 150f
+
+                ballPos = Offset(newX, newY)
+
+                // چک کردن سقوط در چاله‌های سیاه (باخت)
+                holes.forEach { hole ->
+                    if ((ballPos - hole).getDistance() < holeRadius - 10f) isGameOver = true
                 }
 
-                if (!collision) ballPos = nextPos
-
-                for (hole in holes) {
-                    if ((ballPos - hole).getDistance() < 40f) isGameOver = true
-                }
-
-                if ((ballPos - goalPos).getDistance() < 50f) isWin = true
+                // چک کردن هدف (برد)
+                if ((ballPos - goalPos).getDistance() < 40f) isFalling = true
             }
         }
 
-        Box(modifier = Modifier.fillMaxSize().background(Color(0xFFEBC9A0))) {
+        Box(modifier = Modifier.fillMaxSize().background(Color(0xFFD7CCC8))) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // رسم چاله‌ها
-                for (hole in holes) {
-                    drawCircle(brush = Brush.radialGradient(listOf(Color.Black, Color(0xFF3E2723))), radius = 45f, center = hole)
+                // ۱. قاب دور صفحه (دیوار محافظ)
+                drawRect(color = Color(0xFF5D4037), style = Stroke(width = 50f))
+
+                // ۲. رسم چاله‌های مانع
+                holes.forEach { hole ->
+                    drawCircle(
+                        brush = Brush.radialGradient(listOf(Color.Black, Color(0xFF212121))),
+                        radius = holeRadius,
+                        center = hole
+                    )
                 }
 
-                // رسم هدف
-                drawCircle(color = Color.Black, radius = 55f, center = goalPos, style = Stroke(width = 10f))
-                drawCircle(color = Color.Red, radius = 20f, center = goalPos)
-
-                // رسم دیوارها
-                for (wall in walls) {
-                    drawRect(color = Color(0xFF5D4037), topLeft = wall.pos, size = wall.size)
-                }
-
-                // رسم توپ فلزی براق
+                // ۳. رسم چاله هدف (جذاب‌تر)
                 drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color.White, Color(0xFFBDBDBD), Color(0xFF424242)),
-                        center = Offset(ballPos.x - 8f, ballPos.y - 8f),
-                        radius = ballRadius * 1.5f
-                    ),
-                    radius = ballRadius,
-                    center = ballPos
+                    brush = Brush.radialGradient(listOf(Color(0xFF1B5E20), Color.Black)),
+                    radius = holeRadius + 10f,
+                    center = goalPos
                 )
+                drawCircle(color = Color.White.copy(0.3f), radius = holeRadius, center = goalPos, style = Stroke(width = 4f))
+
+                // ۴. رسم توپ با افکت سقوط
+                scale(ballScale, ballPos) {
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(Color.White, Color(0xFF9E9E9E), Color(0xFF424242)),
+                            center = Offset(ballPos.x - 8f, ballPos.y - 8f),
+                            radius = ballRadius * 1.5f
+                        ),
+                        radius = ballRadius,
+                        center = ballPos
+                    )
+                }
             }
 
-            // نمایش سطح فعلی در بالای صفحه
-            Text("LEVEL: $currentLevel", modifier = Modifier.padding(30.dp), color = Color(0xFF5D4037), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            // رابط کاربری (تایمر و لول)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(40.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("LEVEL: $currentLevel", color = Color(0xFF5D4037), fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text("TIME: $timeLeft", color = if (timeLeft < 10) Color.Red else Color(0xFF5D4037), fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+            }
 
-            if (isGameOver || isWin) {
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.8f)), contentAlignment = Alignment.Center) {
-                    Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            // صفحه باخت
+            if (isGameOver) {
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.85f)), contentAlignment = Alignment.Center) {
+                    Card(shape = RoundedCornerShape(20.dp)) {
                         Column(modifier = Modifier.padding(40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(if (isWin) "WINNER!" else "GAME OVER", fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                            Text(if (timeLeft == 0) "TIME OUT!" else "HOLE IN!", fontSize = 30.sp, fontWeight = FontWeight.Bold)
                             Spacer(modifier = Modifier.height(20.dp))
-                            Button(
-                                onClick = {
-                                    if (isWin) onWin() else {
-                                        ballPos = Offset(100f, 100f)
-                                        isGameOver = false
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5D4037))
-                            ) {
-                                Text(if (isWin) "NEXT LEVEL" else "TRY AGAIN")
+                            Button(onClick = { onLose() }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5D4037))) {
+                                Text("TRY AGAIN")
                             }
                         }
                     }
@@ -209,5 +218,3 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         }
     }
 }
-
-data class RectData(val pos: Offset, val size: Size)
