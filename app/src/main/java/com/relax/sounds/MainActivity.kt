@@ -50,25 +50,27 @@ class MainActivity : ComponentActivity() {
         var selectedTrack by remember { mutableStateOf<YTTrack?>(null) }
         var ytPlayer by remember { mutableStateOf<YouTubePlayer?>(null) }
 
-        // شبیه‌سازی نتایج جستجو (این لیست با تایپ کاربر تغییر می‌کند)
+        // لیست آهنگ‌های واقعی و فعال یوتیوب برای تست اولیه
         val tracks = remember(searchQuery) {
             if (searchQuery.isEmpty()) {
                 listOf(
-                    YTTrack("Relaxing Rain", "Nature Sounds", "mPZkdNFqeps"),
-                    YTTrack("Deep Sleep Piano", "Calm Music", "lFcSrYw-ARY")
+                    YTTrack("Weightless (Original Case)", "Marconi Union", "UfcAVejslrU"),
+                    YTTrack("Deep Sleep Piano", "Yellow Brick Cinema", "lFcSrYw-ARY"),
+                    YTTrack("Rain on Window", "Nature Sounds", "mPZkdNFqeps")
                 )
             } else {
+                // شبیه‌سازی نتایج بر اساس تایپ شما
                 listOf(
-                    YTTrack("$searchQuery - Mix 1", "YouTube Artist", "670fN_8Vyn0"),
-                    YTTrack("$searchQuery - Instrumental", "Music Studio", "m1MYLge2zqc"),
-                    YTTrack("$searchQuery - Live Version", "Global Records", "lFcSrYw-ARY")
+                    YTTrack("$searchQuery - Relax Mix", "YouTube Music", "670fN_8Vyn0"),
+                    YTTrack("$searchQuery - Calm Piano", "Relax Studio", "m1MYLge2zqc"),
+                    YTTrack("$searchQuery - Study Focus", "Lofi Girl", "jfKfPfyJRdk")
                 )
             }
         }
 
-        // پس‌زمینه گرادینت زیبا
+        // پس‌زمینه گرادینت تیره و شیک
         val bgGradient = Brush.verticalGradient(
-            colors = listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364))
+            colors = listOf(Color(0xFF141E30), Color(0xFF243B55))
         )
 
         Box(modifier = Modifier.fillMaxSize().background(bgGradient)) {
@@ -84,7 +86,7 @@ class MainActivity : ComponentActivity() {
                         })
                     }
                 },
-                modifier = Modifier.size(1.dp).alpha(0f) // ویدیو را ۱ پیکسل و نامرئی کردیم
+                modifier = Modifier.size(1.dp).alpha(0f)
             )
 
             Column(
@@ -96,11 +98,11 @@ class MainActivity : ComponentActivity() {
                 
                 Spacer(modifier = Modifier.height(25.dp))
 
-                // باکس جستجوی مدرن
+                // باکس جستجوی شیشه‌ای
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("جستجوی آهنگ در یوتیوب...", color = Color.White.copy(0.4f)) },
+                    placeholder = { Text("Search on YouTube...", color = Color.White.copy(0.4f)) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(15.dp))
@@ -117,7 +119,7 @@ class MainActivity : ComponentActivity() {
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // لیست آهنگ‌ها (LazyColumn)
+                // لیست آهنگ‌ها با قابلیت اسکرول
                 LazyColumn(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -149,7 +151,7 @@ class MainActivity : ComponentActivity() {
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // کنترلر پخش شیشه‌ای (بدون هاله نارنجی)
+                // کنترلر پخش (بدون هاله نارنجی و کاملاً شیشه‌ای)
                 if (selectedTrack != null) {
                     Row(
                         modifier = Modifier
@@ -161,7 +163,7 @@ class MainActivity : ComponentActivity() {
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("⏮", color = Color.White, fontSize = 26.sp, modifier = Modifier.clickable { /* منطق آهنگ قبلی */ })
+                        Text("⏮", color = Color.White, fontSize = 26.sp)
                         
                         Box(
                             modifier = Modifier
@@ -177,13 +179,13 @@ class MainActivity : ComponentActivity() {
                             Text(if (isPlaying) "⏸" else "▶", color = Color.White, fontSize = 32.sp)
                         }
 
-                        Text("⏭", color = Color.White, fontSize = 26.sp, modifier = Modifier.clickable { /* منطق آهنگ بعدی */ })
+                        Text("⏭", color = Color.White, fontSize = 26.sp)
                     }
                 }
 
                 Spacer(modifier = Modifier.height(15.dp))
                 Text(
-                    text = if (selectedTrack != null) "Now Playing: ${selectedTrack?.title}" else "Developed by HsH. © 2025",
+                    text = if (selectedTrack != null) "Playing: ${selectedTrack?.title}" else "Developed by HsH. © 2025",
                     color = Color.White.copy(0.3f),
                     fontSize = 11.sp
                 )
