@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,7 +20,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,21 +31,18 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
     
-    // مقادیر شتاب‌سنج
     private var accelX by mutableStateOf(0f)
     private var accelY by mutableStateOf(0f)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
         setContent {
             var gameState by remember { mutableStateOf("SPLASH") }
-
             LaunchedEffect(Unit) {
-                delay(3000)
+                delay(2500)
                 gameState = "PLAYING"
             }
 
@@ -71,7 +69,6 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     override fun onSensorChanged(event: SensorEvent?) {
         if (event?.sensor?.type == Sensor.TYPE_ACCELEROMETER) {
-            // معکوس کردن مقادیر برای هماهنگی با حرکت نمایشی
             accelX = -event.values[0] 
             accelY = event.values[1]
         }
@@ -81,94 +78,120 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     @Composable
     fun LabyrinthSplash() {
-        val bgGradient = Brush.verticalGradient(colors = listOf(Color(0xFF0F2027), Color(0xFF2C5364)))
-        Box(modifier = Modifier.fillMaxSize().background(bgGradient), contentAlignment = Alignment.Center) {
+        val bg = Brush.verticalGradient(colors = listOf(Color(0xFF000428), Color(0xFF004E92)))
+        Box(modifier = Modifier.fillMaxSize().background(bg), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("🌀", fontSize = 80.sp)
+                Text("💎", fontSize = 70.sp)
+                Text("LABYRINTH", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Black)
+                Text("PRO EDITION", color = Color.Cyan, fontSize = 14.sp, letterSpacing = 4.sp)
+                Spacer(modifier = Modifier.height(50.dp))
+                CircularProgressIndicator(color = Color.Cyan)
                 Spacer(modifier = Modifier.height(20.dp))
-                Text("LABYRINTH", color = Color(0xFF00E5FF), fontSize = 40.sp, fontWeight = FontWeight.ExtraBold)
-                Spacer(modifier = Modifier.height(100.dp))
-                Text("Tilt your phone to move", color = Color.White.copy(0.6f), fontSize = 14.sp)
-                Text("Developed by HsH. © Copyright", color = Color.Gray, fontSize = 10.sp)
+                Text("Developed by HsH. © 2025", color = Color.White.copy(0.5f), fontSize = 10.sp)
             }
         }
     }
 
     @Composable
     fun LabyrinthGame(ax: Float, ay: Float) {
-        val ballRadius = 35f
-        var ballPos by remember { mutableStateOf(Offset(150f, 150f)) }
+        val ballRadius = 30f
+        var ballPos by remember { mutableStateOf(Offset(100f, 100f)) }
         var gameWon by remember { mutableStateOf(false) }
 
-        val goalPos = Offset(850f, 1600f)
-        val goalRadius = 55f
+        // نقطه شروع: بالا سمت چپ (100, 100)
+        // نقطه پایان: پایین سمت راست
+        val goalPos = Offset(900f, 1800f)
+        val goalRadius = 50f
 
-        // طراحی مرحله ۱
+        // طراحی مارپیچ حرفه‌ای (دیوارهای تو در تو)
         val walls = listOf(
-            RectData(Offset(400f, 0f), Size(30f, 1200f)),
-            RectData(Offset(0f, 800f), Size(400f, 30f)),
-            RectData(Offset(700f, 500f), Size(30f, 1500f))
+            // حاشیه های بیرونی
+            RectData(Offset(0f, 0f), Size(20f, 2000f)), // چپ
+            RectData(Offset(1060f, 0f), Size(20f, 2000f)), // راست
+            RectData(Offset(0f, 0f), Size(1080f, 20f)), // بالا
+            RectData(Offset(0f, 1900f), Size(1080f, 20f)), // پایین
+
+            // پیچ‌های داخلی مرحله ۱
+            RectData(Offset(200f, 200f), Size(20f, 600f)),
+            RectData(Offset(200f, 800f), Size(600f, 20f)),
+            RectData(Offset(800f, 200f), Size(20f, 1000f)),
+            RectData(Offset(400f, 400f), Size(400f, 20f)),
+            RectData(Offset(400f, 1000f), Size(20f, 600f)),
+            RectData(Offset(0f, 1300f), Size(400f, 20f)),
+            RectData(Offset(600f, 1500f), Size(500f, 20f))
         )
 
-        // آپدیت فریم‌های بازی
         LaunchedEffect(ax, ay) {
             if (!gameWon) {
-                val speedMultiplier = 5f
-                val nextX = ballPos.x + (ax * speedMultiplier)
-                val nextY = ballPos.y + (ay * speedMultiplier)
-                val nextPos = Offset(nextX, nextY)
+                val sensitivity = 7f
+                val nextPos = Offset(ballPos.x + (ax * sensitivity), ballPos.y + (ay * sensitivity))
 
-                // بررسی برخورد با دیوار
-                var hasCollision = false
+                var collision = false
                 for (wall in walls) {
-                    if (nextX + ballRadius > wall.pos.x && 
-                        nextX - ballRadius < wall.pos.x + wall.size.width &&
-                        nextY + ballRadius > wall.pos.y && 
-                        nextY - ballRadius < wall.pos.y + wall.size.height) {
-                        hasCollision = true
+                    if (nextPos.x + ballRadius > wall.pos.x && 
+                        nextPos.x - ballRadius < wall.pos.x + wall.size.width &&
+                        nextPos.y + ballRadius > wall.pos.y && 
+                        nextPos.y - ballRadius < wall.pos.y + wall.size.height) {
+                        collision = true
                     }
                 }
 
-                // محدودیت صفحه
-                if (!hasCollision && nextX > 0 && nextY > 0) {
+                if (!collision) {
                     ballPos = nextPos
                 }
 
-                // چک کردن برد
                 if ((ballPos - goalPos).getDistance() < goalRadius) {
                     gameWon = true
                 }
             }
         }
 
-        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF121212))) {
+        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0D1117))) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // رسم هدف
+                // رسم مسیر پایان با افکت درخشش
                 drawCircle(color = Color(0xFF00FF88), radius = goalRadius, center = goalPos)
+                drawCircle(color = Color(0xFF00FF88), radius = goalRadius + 10f, center = goalPos, style = Stroke(width = 2f))
                 
-                // رسم دیوارها
+                // رسم دیوارها با تم نئونی قرمز/صورتی
                 for (wall in walls) {
-                    drawRect(color = Color(0xFFFF5252), topLeft = wall.pos, size = wall.size)
+                    drawRect(
+                        brush = Brush.linearGradient(listOf(Color(0xFFFF0055), Color(0xFFFF5500))),
+                        topLeft = wall.pos,
+                        size = wall.size
+                    )
                 }
 
-                // رسم توپ
+                // رسم توپ به صورت متالیک
                 drawCircle(
-                    brush = Brush.radialGradient(listOf(Color.Yellow, Color(0xFFFFA000))),
+                    brush = Brush.radialGradient(listOf(Color(0xFFE0E0E0), Color(0xFF757575))),
                     radius = ballRadius,
                     center = ballPos
                 )
             }
 
+            // لایه رابط کاربری
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("LEVEL 1", color = Color.White.copy(0.5f), fontWeight = FontWeight.Bold)
+                Text("Find the Green Exit", color = Color.White, fontSize = 12.sp)
+            }
+
             if (gameWon) {
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.8f)), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("LEVEL COMPLETE!", color = Color.Cyan, fontSize = 35.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Button(onClick = { 
-                            ballPos = Offset(150f, 150f)
-                            gameWon = false 
-                        }) {
-                            Text("Play Again")
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.85f)), contentAlignment = Alignment.Center) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF161B22)),
+                        shape = RoundedCornerShape(24.dp),
+                        modifier = Modifier.padding(30.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("VICTORY!", color = Color(0xFF00FF88), fontSize = 40.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("Level 1 Completed", color = Color.White)
+                            Spacer(modifier = Modifier.height(30.dp))
+                            Button(
+                                onClick = { ballPos = Offset(100f, 100f); gameWon = false },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00FF88))
+                            ) {
+                                Text("PLAY AGAIN", color = Color.Black)
+                            }
                         }
                     }
                 }
