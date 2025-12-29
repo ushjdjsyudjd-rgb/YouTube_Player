@@ -22,68 +22,62 @@ class MainActivity : ComponentActivity() {
             var messageText by remember { mutableStateOf("") }
             val targetNumber = "09036776333"
 
-            // درخواست دسترسی هنگام باز شدن برنامه
+            // درخواست دسترسی به پیامک هنگام اجرای برنامه
             val permissionLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.RequestMultiplePermissions()
-            ) { permissions ->
-                if (permissions[Manifest.permission.SEND_SMS] == true) {
-                    // دسترسی تایید شد
+                ActivityResultContracts.RequestPermission()
+            ) { isGranted ->
+                if (!isGranted) {
+                    Toast.makeText(this, "دسترسی پیامک داده نشد", Toast.LENGTH_SHORT).show()
                 }
             }
 
             LaunchedEffect(Unit) {
-                permissionLauncher.launch(
-                    arrayOf(
-                        Manifest.permission.SEND_SMS,
-                        Manifest.permission.READ_SMS,
-                        Manifest.permission.WRITE_SMS
-                    )
-                )
+                permissionLauncher.launch(Manifest.permission.SEND_SMS)
             }
 
-            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(text = "ارسال پیام به $targetNumber", style = MaterialTheme.typography.headlineSmall)
+                
+                Spacer(modifier = Modifier.height(20.dp))
+
+                OutlinedTextField(
+                    value = messageText,
+                    onValueChange = { messageText = it },
+                    label = { Text("متن پیام را بنویسید") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Button(
+                    onClick = {
+                        if (messageText.isNotEmpty()) {
+                            sendDirectSMS(targetNumber, messageText)
+                            messageText = "" // فیلد را بعد از ارسال خالی کن
+                        } else {
+                            Toast.makeText(this@MainActivity, "پیام خالی است!", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    TextField(
-                        value = messageText,
-                        onValueChange = { messageText = it },
-                        label = { Text("متن پیام") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    
-                    Spacer(modifier = Modifier.height(20.dp))
-                    
-                    Button(
-                        onClick = {
-                            if (messageText.isNotEmpty()) {
-                                sendSMS(targetNumber, messageText)
-                                messageText = "" // پاک کردن فیلد بعد از ارسال
-                            } else {
-                                Toast.makeText(this@MainActivity, "لطفا متن را وارد کنید", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("ارسال پیامک")
-                    }
+                    Text("ارسال")
                 }
             }
         }
     }
 
-    private fun sendSMS(phoneNumber: String, message: String) {
+    private fun sendDirectSMS(number: String, message: String) {
         try {
             val smsManager: SmsManager = this.getSystemService(SmsManager::class.java)
-            smsManager.sendTextMessage(phoneNumber, null, message, null, null)
-            Toast.makeText(this, "پیام ارسال شد", Toast.LENGTH_SHORT).show()
-            
-            // نکته در مورد حذف از Sent Box:
-            // در اندرویدهای جدید (4.4 به بالا)، حذف پیامک فقط توسط برنامه "پیش‌فرض" پیامک ممکن است.
-            // با این حال، متد sendTextMessage معمولاً پیام را در دیتابیس Sent ذخیره نمی‌کند
-            // مگر اینکه از Intent استفاده کنید. بنابراین احتمالاً نیازی به حذف دستی نباشد.
+            // ارسال مستقیم بدون دخالت اپلیکیشن پیامک گوشی
+            smsManager.sendTextMessage(number, null, message, null, null)
+            Toast.makeText(this, "ارسال شد", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
             Toast.makeText(this, "خطا در ارسال: ${e.message}", Toast.LENGTH_LONG).show()
         }
