@@ -25,12 +25,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlin.random.Random
 
 class MainActivity : ComponentActivity(), SensorEventListener {
-    
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
-    
     private var accelX by mutableStateOf(0f)
     private var accelY by mutableStateOf(0f)
 
@@ -41,25 +40,51 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         setContent {
             var gameState by remember { mutableStateOf("SPLASH") }
-            LaunchedEffect(Unit) {
-                delay(2500)
-                gameState = "PLAYING"
-            }
+            var level by remember { mutableStateOf(1) }
 
             MaterialTheme {
                 when (gameState) {
-                    "SPLASH" -> LabyrinthSplash()
-                    "PLAYING" -> LabyrinthGame(accelX, accelY)
+                    "SPLASH" -> {
+                        LaunchedEffect(Unit) { delay(2000); gameState = "PLAYING" }
+                        FullScreenMessage("LABYRINTH", "PRO EDITION", Color(0xFF3E2723))
+                    }
+                    "NEXT_LEVEL" -> {
+                        LaunchedEffect(Unit) { delay(1500); gameState = "PLAYING" }
+                        FullScreenMessage("NEXT LEVEL", "Level $level is starting...", Color(0xFF1B5E20))
+                    }
+                    "PLAYING" -> {
+                        LabyrinthGame(
+                            ax = accelX,
+                            ay = accelY,
+                            currentLevel = level,
+                            onWin = {
+                                level++
+                                gameState = "NEXT_LEVEL"
+                            },
+                            onLose = {
+                                // اگر باخت، لول تغییر نمی‌کند و فقط بازی ریست می‌شود
+                                gameState = "PLAYING" 
+                            }
+                        )
+                    }
                 }
+            }
+        }
+    }
+
+    @Composable
+    fun FullScreenMessage(title: String, sub: String, bgColor: Color) {
+        Box(modifier = Modifier.fillMaxSize().background(bgColor), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(title, color = Color.White, fontSize = 45.sp, fontWeight = FontWeight.Black)
+                Text(sub, color = Color.White.copy(0.7f), fontSize = 18.sp)
             }
         }
     }
 
     override fun onResume() {
         super.onResume()
-        accelerometer?.let {
-            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
-        }
+        accelerometer?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
     }
 
     override fun onPause() {
@@ -69,7 +94,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     override fun onSensorChanged(event: SensorEvent?) {
         if (event?.sensor?.type == Sensor.TYPE_ACCELEROMETER) {
-            accelX = -event.values[0] 
+            accelX = -event.values[0]
             accelY = event.values[1]
         }
     }
@@ -77,120 +102,105 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     @Composable
-    fun LabyrinthSplash() {
-        val bg = Brush.verticalGradient(colors = listOf(Color(0xFF000428), Color(0xFF004E92)))
-        Box(modifier = Modifier.fillMaxSize().background(bg), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("💎", fontSize = 70.sp)
-                Text("LABYRINTH", color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Black)
-                Text("PRO EDITION", color = Color.Cyan, fontSize = 14.sp, letterSpacing = 4.sp)
-                Spacer(modifier = Modifier.height(50.dp))
-                CircularProgressIndicator(color = Color.Cyan)
-                Spacer(modifier = Modifier.height(20.dp))
-                Text("Developed by HsH. © 2025", color = Color.White.copy(0.5f), fontSize = 10.sp)
+    fun LabyrinthGame(ax: Float, ay: Float, currentLevel: Int, onWin: () -> Unit, onLose: () -> Unit) {
+        val ballRadius = 28f
+        var ballPos by remember { mutableStateOf(Offset(100f, 100f)) }
+        var isGameOver by remember { mutableStateOf(false) }
+        var isWin by remember { mutableStateOf(false) }
+
+        // تولید محتوای تصادفی برای هر مرحله
+        val holes = remember(currentLevel) {
+            List(6 + currentLevel) { 
+                Offset(Random.nextFloat() * 800f + 100f, Random.nextFloat() * 1400f + 200f)
             }
         }
-    }
+        val walls = remember(currentLevel) {
+            val list = mutableListOf(
+                RectData(Offset(0f, 0f), Size(25f, 2000f)),
+                RectData(Offset(1055f, 0f), Size(25f, 2000f)),
+                RectData(Offset(0f, 1875f), Size(1080f, 25f))
+            )
+            repeat(4) {
+                list.add(RectData(
+                    Offset(Random.nextFloat() * 700f, Random.nextFloat() * 1400f + 200f),
+                    Size(if(Random.nextBoolean()) 300f else 35f, if(Random.nextBoolean()) 35f else 300f)
+                ))
+            }
+            list
+        }
 
-    @Composable
-    fun LabyrinthGame(ax: Float, ay: Float) {
-        val ballRadius = 30f
-        var ballPos by remember { mutableStateOf(Offset(100f, 100f)) }
-        var gameWon by remember { mutableStateOf(false) }
-
-        // نقطه شروع: بالا سمت چپ (100, 100)
-        // نقطه پایان: پایین سمت راست
-        val goalPos = Offset(900f, 1800f)
-        val goalRadius = 50f
-
-        // طراحی مارپیچ حرفه‌ای (دیوارهای تو در تو)
-        val walls = listOf(
-            // حاشیه های بیرونی
-            RectData(Offset(0f, 0f), Size(20f, 2000f)), // چپ
-            RectData(Offset(1060f, 0f), Size(20f, 2000f)), // راست
-            RectData(Offset(0f, 0f), Size(1080f, 20f)), // بالا
-            RectData(Offset(0f, 1900f), Size(1080f, 20f)), // پایین
-
-            // پیچ‌های داخلی مرحله ۱
-            RectData(Offset(200f, 200f), Size(20f, 600f)),
-            RectData(Offset(200f, 800f), Size(600f, 20f)),
-            RectData(Offset(800f, 200f), Size(20f, 1000f)),
-            RectData(Offset(400f, 400f), Size(400f, 20f)),
-            RectData(Offset(400f, 1000f), Size(20f, 600f)),
-            RectData(Offset(0f, 1300f), Size(400f, 20f)),
-            RectData(Offset(600f, 1500f), Size(500f, 20f))
-        )
+        val goalPos = Offset(900f, 1750f)
 
         LaunchedEffect(ax, ay) {
-            if (!gameWon) {
-                val sensitivity = 7f
-                val nextPos = Offset(ballPos.x + (ax * sensitivity), ballPos.y + (ay * sensitivity))
+            if (!isGameOver && !isWin) {
+                val speed = 8f
+                val nextPos = Offset(ballPos.x + (ax * speed), ballPos.y + (ay * speed))
 
                 var collision = false
                 for (wall in walls) {
-                    if (nextPos.x + ballRadius > wall.pos.x && 
-                        nextPos.x - ballRadius < wall.pos.x + wall.size.width &&
-                        nextPos.y + ballRadius > wall.pos.y && 
-                        nextPos.y - ballRadius < wall.pos.y + wall.size.height) {
+                    if (nextPos.x + ballRadius > wall.pos.x && nextPos.x - ballRadius < wall.pos.x + wall.size.width &&
+                        nextPos.y + ballRadius > wall.pos.y && nextPos.y - ballRadius < wall.pos.y + wall.size.height) {
                         collision = true
                     }
                 }
 
-                if (!collision) {
-                    ballPos = nextPos
+                if (!collision) ballPos = nextPos
+
+                for (hole in holes) {
+                    if ((ballPos - hole).getDistance() < 40f) isGameOver = true
                 }
 
-                if ((ballPos - goalPos).getDistance() < goalRadius) {
-                    gameWon = true
-                }
+                if ((ballPos - goalPos).getDistance() < 50f) isWin = true
             }
         }
 
-        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0D1117))) {
+        Box(modifier = Modifier.fillMaxSize().background(Color(0xFFEBC9A0))) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // رسم مسیر پایان با افکت درخشش
-                drawCircle(color = Color(0xFF00FF88), radius = goalRadius, center = goalPos)
-                drawCircle(color = Color(0xFF00FF88), radius = goalRadius + 10f, center = goalPos, style = Stroke(width = 2f))
-                
-                // رسم دیوارها با تم نئونی قرمز/صورتی
-                for (wall in walls) {
-                    drawRect(
-                        brush = Brush.linearGradient(listOf(Color(0xFFFF0055), Color(0xFFFF5500))),
-                        topLeft = wall.pos,
-                        size = wall.size
-                    )
+                // رسم چاله‌ها
+                for (hole in holes) {
+                    drawCircle(brush = Brush.radialGradient(listOf(Color.Black, Color(0xFF3E2723))), radius = 45f, center = hole)
                 }
 
-                // رسم توپ به صورت متالیک
+                // رسم هدف
+                drawCircle(color = Color.Black, radius = 55f, center = goalPos, style = Stroke(width = 10f))
+                drawCircle(color = Color.Red, radius = 20f, center = goalPos)
+
+                // رسم دیوارها
+                for (wall in walls) {
+                    drawRect(color = Color(0xFF5D4037), topLeft = wall.pos, size = wall.size)
+                }
+
+                // رسم توپ فلزی براق
                 drawCircle(
-                    brush = Brush.radialGradient(listOf(Color(0xFFE0E0E0), Color(0xFF757575))),
+                    brush = Brush.radialGradient(
+                        colors = listOf(Color.White, Color(0xFFBDBDBD), Color(0xFF424242)),
+                        center = Offset(ballPos.x - 8f, ballPos.y - 8f),
+                        radius = ballRadius * 1.5f
+                    ),
                     radius = ballRadius,
                     center = ballPos
                 )
             }
 
-            // لایه رابط کاربری
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text("LEVEL 1", color = Color.White.copy(0.5f), fontWeight = FontWeight.Bold)
-                Text("Find the Green Exit", color = Color.White, fontSize = 12.sp)
-            }
+            // نمایش سطح فعلی در بالای صفحه
+            Text("LEVEL: $currentLevel", modifier = Modifier.padding(30.dp), color = Color(0xFF5D4037), fontWeight = FontWeight.Bold, fontSize = 18.sp)
 
-            if (gameWon) {
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.85f)), contentAlignment = Alignment.Center) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF161B22)),
-                        shape = RoundedCornerShape(24.dp),
-                        modifier = Modifier.padding(30.dp)
-                    ) {
+            if (isGameOver || isWin) {
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.8f)), contentAlignment = Alignment.Center) {
+                    Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                         Column(modifier = Modifier.padding(40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("VICTORY!", color = Color(0xFF00FF88), fontSize = 40.sp, fontWeight = FontWeight.ExtraBold)
-                            Text("Level 1 Completed", color = Color.White)
-                            Spacer(modifier = Modifier.height(30.dp))
+                            Text(if (isWin) "WINNER!" else "GAME OVER", fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(20.dp))
                             Button(
-                                onClick = { ballPos = Offset(100f, 100f); gameWon = false },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00FF88))
+                                onClick = {
+                                    if (isWin) onWin() else {
+                                        ballPos = Offset(100f, 100f)
+                                        isGameOver = false
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5D4037))
                             ) {
-                                Text("PLAY AGAIN", color = Color.Black)
+                                Text(if (isWin) "NEXT LEVEL" else "TRY AGAIN")
                             }
                         }
                     }
