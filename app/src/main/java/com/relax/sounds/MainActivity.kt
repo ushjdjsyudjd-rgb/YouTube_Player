@@ -1,209 +1,180 @@
 package com.relax.sounds
 
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.*
-import androidx.compose.foundation.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.YouTubePlayer
-import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.AbstractYouTubePlayerListener
-import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.net.URL
 
-data class Song(val title: String, val author: String, val id: String)
+class MainActivity : ComponentActivity(), SensorEventListener {
+    
+    private lateinit var sensorManager: SensorManager
+    private var accelerometer: Sensor? = null
+    
+    // مقادیر شتاب‌سنج
+    private var accelX by mutableStateOf(0f)
+    private var accelY by mutableStateOf(0f)
 
-class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            var showSplash by remember { mutableStateOf(true) }
+        
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
-            // تایمر برای اسپلش اسکرین (۳ ثانیه)
+        setContent {
+            var gameState by remember { mutableStateOf("SPLASH") }
+
             LaunchedEffect(Unit) {
                 delay(3000)
-                showSplash = false
+                gameState = "PLAYING"
             }
 
             MaterialTheme {
-                if (showSplash) {
-                    SplashScreen()
-                } else {
-                    MusicPlayerScreen()
+                when (gameState) {
+                    "SPLASH" -> LabyrinthSplash()
+                    "PLAYING" -> LabyrinthGame(accelX, accelY)
                 }
             }
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        accelerometer?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        sensorManager.unregisterListener(this)
+    }
+
+    override fun onSensorChanged(event: SensorEvent?) {
+        if (event?.sensor?.type == Sensor.TYPE_ACCELEROMETER) {
+            // معکوس کردن مقادیر برای هماهنگی با حرکت نمایشی
+            accelX = -event.values[0] 
+            accelY = event.values[1]
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
     @Composable
-    fun SplashScreen() {
-        val bgGradient = Brush.verticalGradient(colors = listOf(Color(0xFF1E4597), Color(0xFFD4A373)))
+    fun LabyrinthSplash() {
+        val bgGradient = Brush.verticalGradient(colors = listOf(Color(0xFF0F2027), Color(0xFF2C5364)))
         Box(modifier = Modifier.fillMaxSize().background(bgGradient), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("🌿", fontSize = 80.sp)
+                Text("🌀", fontSize = 80.sp)
                 Spacer(modifier = Modifier.height(20.dp))
-                Text("Music Player", color = Color.White, fontSize = 35.sp, fontWeight = FontWeight.Bold)
+                Text("LABYRINTH", color = Color(0xFF00E5FF), fontSize = 40.sp, fontWeight = FontWeight.ExtraBold)
                 Spacer(modifier = Modifier.height(100.dp))
-                Text("Developed by HsH. © Copyright", color = Color.White.copy(0.7f), fontSize = 12.sp)
+                Text("Tilt your phone to move", color = Color.White.copy(0.6f), fontSize = 14.sp)
+                Text("Developed by HsH. © Copyright", color = Color.Gray, fontSize = 10.sp)
             }
         }
     }
 
     @Composable
-    fun MusicPlayerScreen() {
-        var searchQuery by remember { mutableStateOf("") }
-        var isPlaying by remember { mutableStateOf(false) }
-        var selectedSong by remember { mutableStateOf<Song?>(null) }
-        var ytPlayer by remember { mutableStateOf<YouTubePlayer?>(null) }
-        val scope = rememberCoroutineScope()
-        val focusManager = LocalFocusManager.current
-        val songList = remember { mutableStateListOf<Song>() }
+    fun LabyrinthGame(ax: Float, ay: Float) {
+        val ballRadius = 35f
+        var ballPos by remember { mutableStateOf(Offset(150f, 150f)) }
+        var gameWon by remember { mutableStateOf(false) }
 
-        fun performSearch(query: String) {
-            if (query.isEmpty()) return
-            focusManager.clearFocus()
-            scope.launch {
-                val results = withContext(Dispatchers.IO) {
-                    try {
-                        val url = "https://www.youtube.com/results?search_query=${query.replace(" ", "+")}"
-                        val html = URL(url).readText()
-                        val regex = "videoRenderer\":\\{\"videoId\":\"(.*?)\".*?\"title\":\\{\"runs\":\\[\\{\"text\":\"(.*?)\"\\}\\]".toRegex()
-                        regex.findAll(html).take(15).map {
-                            Song(it.groupValues[2], "YouTube Result", it.groupValues[1])
-                        }.toList()
-                    } catch (e: Exception) { emptyList<Song>() }
+        val goalPos = Offset(850f, 1600f)
+        val goalRadius = 55f
+
+        // طراحی مرحله ۱
+        val walls = listOf(
+            RectData(Offset(400f, 0f), Size(30f, 1200f)),
+            RectData(Offset(0f, 800f), Size(400f, 30f)),
+            RectData(Offset(700f, 500f), Size(30f, 1500f))
+        )
+
+        // آپدیت فریم‌های بازی
+        LaunchedEffect(ax, ay) {
+            if (!gameWon) {
+                val speedMultiplier = 5f
+                val nextX = ballPos.x + (ax * speedMultiplier)
+                val nextY = ballPos.y + (ay * speedMultiplier)
+                val nextPos = Offset(nextX, nextY)
+
+                // بررسی برخورد با دیوار
+                var hasCollision = false
+                for (wall in walls) {
+                    if (nextX + ballRadius > wall.pos.x && 
+                        nextX - ballRadius < wall.pos.x + wall.size.width &&
+                        nextY + ballRadius > wall.pos.y && 
+                        nextY - ballRadius < wall.pos.y + wall.size.height) {
+                        hasCollision = true
+                    }
                 }
-                songList.clear()
-                songList.addAll(results)
+
+                // محدودیت صفحه
+                if (!hasCollision && nextX > 0 && nextY > 0) {
+                    ballPos = nextPos
+                }
+
+                // چک کردن برد
+                if ((ballPos - goalPos).getDistance() < goalRadius) {
+                    gameWon = true
+                }
             }
         }
 
-        val mainGradient = Brush.verticalGradient(
-            colors = listOf(Color(0xFF1E4597), Color(0xFF2B3A67), Color(0xFF8E6B58), Color(0xFFD4A373))
-        )
-
-        Box(modifier = Modifier.fillMaxSize().background(mainGradient)) {
-            AndroidView(
-                factory = { context ->
-                    YouTubePlayerView(context).apply {
-                        addYouTubePlayerListener(object : AbstractYouTubePlayerListener() {
-                            override fun onReady(player: YouTubePlayer) { ytPlayer = player }
-                        })
-                    }
-                },
-                modifier = Modifier.size(1.dp).alpha(0f)
-            )
-
-            Column(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Spacer(modifier = Modifier.height(50.dp))
-                Text("Music Player", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF121212))) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                // رسم هدف
+                drawCircle(color = Color(0xFF00FF88), radius = goalRadius, center = goalPos)
                 
-                Spacer(modifier = Modifier.height(20.dp))
+                // رسم دیوارها
+                for (wall in walls) {
+                    drawRect(color = Color(0xFFFF5252), topLeft = wall.pos, size = wall.size)
+                }
 
-                // باکس سرچ اصلاح شده
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search music...", color = Color.White.copy(0.5f)) },
-                    modifier = Modifier.fillMaxWidth().clip(CircleShape).background(Color.White.copy(0.15f)),
-                    leadingIcon = { Icon(Icons.Default.Search, null, tint = Color.White) },
-                    shape = CircleShape,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { performSearch(searchQuery) }),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.White.copy(0.5f),
-                        unfocusedBorderColor = Color.Transparent,
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    ),
-                    singleLine = true
+                // رسم توپ
+                drawCircle(
+                    brush = Brush.radialGradient(listOf(Color.Yellow, Color(0xFFFFA000))),
+                    radius = ballRadius,
+                    center = ballPos
                 )
+            }
 
-                Spacer(modifier = Modifier.height(15.dp))
-
-                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("آهنگ جدید", "شاد ایرانی", "ریمیکس", "غمگین").forEach { label ->
-                        Button(
-                            onClick = { searchQuery = label; performSearch(label) },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(0.12f)),
-                            shape = CircleShape,
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
-                        ) { Text(label, color = Color.White, fontSize = 12.sp) }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(songList) { song ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp)).background(Color.White.copy(0.07f))
-                                .clickable { selectedSong = song; isPlaying = true; ytPlayer?.loadVideo(song.id, 0f) }.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(modifier = Modifier.size(45.dp).background(Color.White.copy(0.1f), CircleShape), contentAlignment = Alignment.Center) { Text("🎵") }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(song.title, color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp, maxLines = 1)
-                                Text(song.author, color = Color.White.copy(0.5f), fontSize = 11.sp)
-                            }
+            if (gameWon) {
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(0.8f)), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("LEVEL COMPLETE!", color = Color.Cyan, fontSize = 35.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(onClick = { 
+                            ballPos = Offset(150f, 150f)
+                            gameWon = false 
+                        }) {
+                            Text("Play Again")
                         }
                     }
                 }
-
-                // دکمه‌های کنترلر پایین
-                if (selectedSong != null) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp).height(100.dp)
-                            .clip(RoundedCornerShape(50.dp)).background(Color.White.copy(0.1f))
-                            .border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(50.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(40.dp)) {
-                            Text("⏮", color = Color.White, fontSize = 30.sp, modifier = Modifier.clickable { /* Prev logic */ })
-                            Surface(
-                                modifier = Modifier.size(65.dp).clickable { 
-                                    if (isPlaying) ytPlayer?.pause() else ytPlayer?.play()
-                                    isPlaying = !isPlaying
-                                },
-                                shape = CircleShape, color = Color.White.copy(0.2f)
-                            ) { Box(contentAlignment = Alignment.Center) { Text(if (isPlaying) "⏸" else "▶", color = Color.White, fontSize = 35.sp) } }
-                            Text("⏭", color = Color.White, fontSize = 30.sp, modifier = Modifier.clickable { /* Next logic */ })
-                        }
-                    }
-                }
-
-                Text("Developed by HsH. © Copyright", color = Color.White.copy(0.3f), fontSize = 10.sp, modifier = Modifier.padding(bottom = 10.dp))
             }
         }
     }
 }
+
+data class RectData(val pos: Offset, val size: Size)
