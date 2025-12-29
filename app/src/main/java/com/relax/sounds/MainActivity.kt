@@ -1,20 +1,19 @@
 package com.relax.sounds
 
-import android.media.MediaPlayer
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,232 +23,172 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
+import androidx.compose.ui.viewinterop.AndroidView
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.YouTubePlayer
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.AbstractYouTubePlayerListener
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 
-data class Track(val name: String, val resId: Int)
+// مدل داده برای آهنگ‌های یوتیوب
+data class YTTrack(val title: String, val author: String, val videoId: String)
 
 class MainActivity : ComponentActivity() {
-    private var mediaPlayer: MediaPlayer? = null
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        val trackList = listOf(
-            Track("Dark Heart", R.raw.dark_heart),
-            Track("Sentimental", R.raw.sentimental),
-            Track("Harmony", R.raw.harmony),
-            Track("Careful", R.raw.careful),
-            Track("Worlds", R.raw.worlds),
-            Track("Pure Dream", R.raw.pure_dream),
-            Track("For You", R.raw.for_you),
-            Track("Thoughtful", R.raw.thoughtful),
-            Track("Bread", R.raw.bread),
-            Track("Enlivening", R.raw.enlivening)
-        )
-
         setContent {
-            var showSplash by remember { mutableStateOf(true) }
-            LaunchedEffect(Unit) { delay(3000); showSplash = false }
-
             MaterialTheme {
-                Crossfade(targetState = showSplash) { isSplash ->
-                    if (isSplash) SplashScreen() else MainPlayerScreen(trackList)
-                }
+                YouTubeMusicApp()
             }
         }
     }
 
     @Composable
-    fun SplashScreen() {
-        val infiniteTransition = rememberInfiniteTransition()
-        val alpha by infiniteTransition.animateFloat(
-            initialValue = 0.3f, targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1200), repeatMode = RepeatMode.Reverse
-            )
-        )
-
-        Box(modifier = Modifier.fillMaxSize().background(Color(0xFF185A9D)), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Nature Relax", color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Bold, modifier = Modifier.alpha(alpha))
-                Spacer(modifier = Modifier.height(250.dp))
-                Text("Developed by HsH. © Copyright", color = Color.White.copy(0.4f), fontSize = 12.sp)
-            }
-        }
-    }
-
-    @Composable
-    fun MainPlayerScreen(tracks: List<Track>) {
-        var currentIndex by remember { mutableStateOf(0) }
+    fun YouTubeMusicApp() {
+        var searchQuery by remember { mutableStateOf("") }
         var isPlaying by remember { mutableStateOf(false) }
-        var currentPos by remember { mutableStateOf(0) }
-        var duration by remember { mutableStateOf(1) }
-        var sleepTimer by remember { mutableStateOf(0) }
+        var selectedTrack by remember { mutableStateOf<YTTrack?>(null) }
+        var ytPlayer by remember { mutableStateOf<YouTubePlayer?>(null) }
 
+        // شبیه‌سازی نتایج جستجو (این لیست با تایپ کاربر تغییر می‌کند)
+        val tracks = remember(searchQuery) {
+            if (searchQuery.isEmpty()) {
+                listOf(
+                    YTTrack("Relaxing Rain", "Nature Sounds", "mPZkdNFqeps"),
+                    YTTrack("Deep Sleep Piano", "Calm Music", "lFcSrYw-ARY")
+                )
+            } else {
+                listOf(
+                    YTTrack("$searchQuery - Mix 1", "YouTube Artist", "670fN_8Vyn0"),
+                    YTTrack("$searchQuery - Instrumental", "Music Studio", "m1MYLge2zqc"),
+                    YTTrack("$searchQuery - Live Version", "Global Records", "lFcSrYw-ARY")
+                )
+            }
+        }
+
+        // پس‌زمینه گرادینت زیبا
         val bgGradient = Brush.verticalGradient(
-            colors = listOf(Color(0xFF43CEA2), Color(0xFF185A9D), Color(0xFF6A11CB))
+            colors = listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364))
         )
-
-        fun playTrack(index: Int) {
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
-            currentIndex = (index + tracks.size) % tracks.size
-            mediaPlayer = MediaPlayer.create(this@MainActivity, tracks[currentIndex].resId)
-            mediaPlayer?.isLooping = true
-            duration = mediaPlayer?.duration ?: 1
-            mediaPlayer?.start()
-            isPlaying = true
-        }
-
-        LaunchedEffect(isPlaying, currentIndex) {
-            while (isPlaying) {
-                currentPos = mediaPlayer?.currentPosition ?: 0
-                delay(1000)
-            }
-        }
-
-        LaunchedEffect(sleepTimer) {
-            if (sleepTimer > 0 && isPlaying) {
-                delay(sleepTimer * 60000L)
-                mediaPlayer?.pause()
-                isPlaying = false
-                sleepTimer = 0
-            }
-        }
 
         Box(modifier = Modifier.fillMaxSize().background(bgGradient)) {
-            // نوار زمان عمودی سمت راست
+            
+            // بخش فنی: پلیر یوتیوب (مخفی برای پخش فقط صدا)
+            AndroidView(
+                factory = { context ->
+                    YouTubePlayerView(context).apply {
+                        addYouTubePlayerListener(object : AbstractYouTubePlayerListener() {
+                            override fun onReady(youTubePlayer: YouTubePlayer) {
+                                ytPlayer = youTubePlayer
+                            }
+                        })
+                    }
+                },
+                modifier = Modifier.size(1.dp).alpha(0f) // ویدیو را ۱ پیکسل و نامرئی کردیم
+            )
+
             Column(
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = 80.dp, end = 10.dp),
+                modifier = Modifier.fillMaxSize().padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(formatTime(currentPos), color = Color.White, fontSize = 10.sp)
-                Spacer(modifier = Modifier.height(5.dp))
-                Box(
-                    modifier = Modifier.width(4.dp).height(180.dp).clip(CircleShape).background(Color.White.copy(0.2f))
+                Spacer(modifier = Modifier.height(40.dp))
+                Text("YouTube Player", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                
+                Spacer(modifier = Modifier.height(25.dp))
+
+                // باکس جستجوی مدرن
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("جستجوی آهنگ در یوتیوب...", color = Color.White.copy(0.4f)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(15.dp))
+                        .background(Color.White.copy(0.08f)),
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color.White) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color.White.copy(0.5f),
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // لیست آهنگ‌ها (LazyColumn)
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    val progressHeight = (currentPos.toFloat() / duration.toFloat()) * 180f
-                    Box(modifier = Modifier.fillMaxWidth().height(progressHeight.dp).background(Color(0xFFFFB347)))
-                }
-                Spacer(modifier = Modifier.height(5.dp))
-                Text("-" + formatTime(duration - currentPos), color = Color.White.copy(0.7f), fontSize = 10.sp)
-            }
-
-            Column(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 25.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Spacer(modifier = Modifier.height(50.dp))
-                Box(modifier = Modifier.size(60.dp).clip(CircleShape).background(Color.White.copy(0.2f)), contentAlignment = Alignment.Center) {
-                    Text("🌿", fontSize = 30.sp)
-                }
-                Text("Logoor", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Light)
-
-                Spacer(modifier = Modifier.height(40.dp))
-
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("Relax.", color = Color(0xFFFFB347), fontSize = 45.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("Breathe.", color = Color.White, fontSize = 45.sp, fontWeight = FontWeight.ExtraBold)
-                    Text("Listen.", color = Color.White, fontSize = 45.sp, fontWeight = FontWeight.ExtraBold)
-                }
-
-                Spacer(modifier = Modifier.height(40.dp))
-
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    itemsIndexed(tracks) { index, track ->
+                    items(tracks) { track ->
                         Surface(
-                            onClick = { playTrack(index) },
-                            color = if (currentIndex == index) Color.White.copy(0.35f) else Color.White.copy(0.1f),
-                            shape = RoundedCornerShape(25.dp),
-                            border = if (currentIndex == index) BorderStroke(1.dp, Color.White.copy(0.5f)) else null
+                            onClick = { 
+                                selectedTrack = track
+                                isPlaying = true
+                                ytPlayer?.loadVideo(track.videoId, 0f) 
+                            },
+                            color = if (selectedTrack == track) Color.White.copy(0.15f) else Color.White.copy(0.05f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = if (selectedTrack == track) BorderStroke(1.dp, Color.White.copy(0.3f)) else null
                         ) {
-                            Text(track.name, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp), color = Color.White, fontSize = 14.sp)
+                            Row(modifier = Modifier.padding(15.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(40.dp).background(Color.White.copy(0.1f), CircleShape), contentAlignment = Alignment.Center) {
+                                    Text("🎵", fontSize = 20.sp)
+                                }
+                                Spacer(modifier = Modifier.width(15.dp))
+                                Column {
+                                    Text(track.title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(track.author, color = Color.White.copy(0.5f), fontSize = 12.sp)
+                                }
+                            }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(60.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-                // باکس کنترلر (اصلاح شده)
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(85.dp).clip(RoundedCornerShape(42.dp))
-                        .background(Color.White.copy(0.12f)).border(1.dp, Color.White.copy(0.15f), RoundedCornerShape(42.dp)),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // عقب
-                    Box(modifier = Modifier.size(50.dp).clip(CircleShape).clickable { playTrack(currentIndex - 1) }, contentAlignment = Alignment.Center) {
-                        Text("⏮", color = Color.White, fontSize = 28.sp)
-                    }
-                    
-                    // دکمه وسط (فقط شیشه‌ای بدون رنگ نارنجی)
-                    Box(
+                // کنترلر پخش شیشه‌ای (بدون هاله نارنجی)
+                if (selectedTrack != null) {
+                    Row(
                         modifier = Modifier
-                            .size(65.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(0.15f)) // رنگ شیشه‌ای ثابت
-                            .clickable { 
-                                if (mediaPlayer == null) {
-                                    playTrack(currentIndex)
-                                } else {
-                                    if (isPlaying) {
-                                        mediaPlayer?.pause()
-                                        isPlaying = false
-                                    } else {
-                                        mediaPlayer?.start()
-                                        isPlaying = true
-                                    }
-                                }
-                            }, 
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .height(85.dp)
+                            .clip(RoundedCornerShape(42.dp))
+                            .background(Color.White.copy(0.1f))
+                            .border(1.dp, Color.White.copy(0.1f), RoundedCornerShape(42.dp)),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(if (isPlaying) "⏸" else "▶", color = Color.White, fontSize = 34.sp)
-                    }
+                        Text("⏮", color = Color.White, fontSize = 26.sp, modifier = Modifier.clickable { /* منطق آهنگ قبلی */ })
+                        
+                        Box(
+                            modifier = Modifier
+                                .size(65.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(0.12f))
+                                .clickable { 
+                                    if (isPlaying) ytPlayer?.pause() else ytPlayer?.play()
+                                    isPlaying = !isPlaying 
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(if (isPlaying) "⏸" else "▶", color = Color.White, fontSize = 32.sp)
+                        }
 
-                    // جلو
-                    Box(modifier = Modifier.size(50.dp).clip(CircleShape).clickable { playTrack(currentIndex + 1) }, contentAlignment = Alignment.Center) {
-                        Text("⏭", color = Color.White, fontSize = 28.sp)
+                        Text("⏭", color = Color.White, fontSize = 26.sp, modifier = Modifier.clickable { /* منطق آهنگ بعدی */ })
                     }
                 }
 
-                Spacer(modifier = Modifier.height(30.dp))
-
-                // دکمه تایمر خواب
-                Surface(
-                    onClick = { if (sleepTimer < 60) sleepTimer += 10 else sleepTimer = 0 },
-                    color = Color(0xFFFFB347).copy(alpha = 0.6f),
-                    shape = RoundedCornerShape(25.dp),
-                    border = BorderStroke(1.dp, Color.White.copy(0.4f)),
-                    modifier = Modifier.fillMaxWidth(0.7f)
-                ) {
-                    Text(
-                        text = "Sleep Timer: ${if(sleepTimer > 0) "$sleepTimer min" else "Off"}",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 8.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.weight(1f))
-                Text("Developed by HsH. © Copyright", modifier = Modifier.padding(bottom = 20.dp), color = Color.White.copy(0.3f), fontSize = 11.sp)
+                Spacer(modifier = Modifier.height(15.dp))
+                Text(
+                    text = if (selectedTrack != null) "Now Playing: ${selectedTrack?.title}" else "Developed by HsH. © 2025",
+                    color = Color.White.copy(0.3f),
+                    fontSize = 11.sp
+                )
+                Spacer(modifier = Modifier.height(10.dp))
             }
         }
-    }
-
-    private fun formatTime(ms: Int): String {
-        val totalSec = ms / 1000
-        val min = totalSec / 60
-        val sec = totalSec % 60
-        return String.format("%02d:%02d", min, sec)
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        mediaPlayer?.release()
     }
 }
