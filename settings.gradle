@@ -1,0 +1,16 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS) // این خط یعنی حرف فایل settings اولویت دارد
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "NatureRelax"
+include ':app'
